@@ -3,13 +3,13 @@
 use Mockery as m;
 use PHPUnit\Framework\TestCase;
 use Illuminate\Events\Dispatcher;
-use Neves\Events\TransactionalDispatcher;
+use Neves\TransactionalEvents\Events\TransactionalDispatcher;
 use Illuminate\Database\ConnectionInterface;
-use Illuminate\Database\ConnectionResolverInterface;
+use \Illuminate\Database\Eloquent\Model;
 
 class TransactionalDispatcherTest extends TestCase
 {
-    protected $connectionResolverMock;
+    protected $modelMock;
 
     protected $dispatcher;
 
@@ -24,8 +24,8 @@ class TransactionalDispatcherTest extends TestCase
         unset($_SERVER['__events.test.bar']);
         unset($_SERVER['__events.test.zen']);
 
-        $this->connectionResolverMock = m::mock(ConnectionResolverInterface::class);
-        $this->dispatcher = new TransactionalDispatcher($this->connectionResolverMock, new Dispatcher());
+        $this->modelMock = m::mock(Model::class);
+        $this->dispatcher = new TransactionalDispatcher(new Dispatcher());
         $this->dispatcher->setTransactionalEvents(['*']);
     }
 
@@ -37,7 +37,7 @@ class TransactionalDispatcherTest extends TestCase
         });
         $this->setupTransactionLevel(0);
 
-        $this->dispatcher->dispatch('foo');
+        $this->dispatcher->dispatch('foo', $this->modelMock);
 
         $this->assertFalse($this->hasCommitListeners());
         $this->assertEquals('bar', $_SERVER['__events.test']);
@@ -51,7 +51,7 @@ class TransactionalDispatcherTest extends TestCase
         });
         $this->setupTransactionLevel(1);
 
-        $this->dispatcher->dispatch('foo');
+        $this->dispatcher->dispatch('foo', $this->modelMock);
 
         $this->assertTrue($this->hasCommitListeners());
         $this->assertArrayNotHasKey('__events.test', $_SERVER);
@@ -64,7 +64,7 @@ class TransactionalDispatcherTest extends TestCase
             $_SERVER['__events.test'] = 'bar';
         });
         $this->setupTransactionLevel(1);
-        $this->dispatcher->dispatch('foo');
+        $this->dispatcher->dispatch('foo', $this->modelMock);
 
         $this->dispatcher->commit($this->getConnection());
 
@@ -79,7 +79,7 @@ class TransactionalDispatcherTest extends TestCase
             $_SERVER['__events.test'] = 'bar';
         });
         $this->setupTransactionLevel(1);
-        $this->dispatcher->dispatch('foo');
+        $this->dispatcher->dispatch('foo', $this->modelMock);
 
         $this->dispatcher->rollback($this->getConnection());
 
@@ -96,7 +96,7 @@ class TransactionalDispatcherTest extends TestCase
 
         $this->setupTransactionLevel(1);
         $this->dispatcher->setExcludedEvents(['foo']);
-        $this->dispatcher->dispatch('foo');
+        $this->dispatcher->dispatch('foo', $this->modelMock);
 
         $this->assertFalse($this->hasCommitListeners());
         $this->assertEquals('bar', $_SERVER['__events.test']);
@@ -111,7 +111,7 @@ class TransactionalDispatcherTest extends TestCase
 
         $this->setupTransactionLevel(1);
         $this->dispatcher->setTransactionalEvents(['bar']);
-        $this->dispatcher->dispatch('foo');
+        $this->dispatcher->dispatch('foo', $this->modelMock);
 
         $this->assertFalse($this->hasCommitListeners());
         $this->assertEquals('bar', $_SERVER['__events.test']);
@@ -126,7 +126,7 @@ class TransactionalDispatcherTest extends TestCase
 
         $this->setupTransactionLevel(1);
         $this->dispatcher->setTransactionalEvents(['foo/*']);
-        $this->dispatcher->dispatch('foo');
+        $this->dispatcher->dispatch('foo', $this->modelMock);
 
         $this->assertFalse($this->hasCommitListeners());
         $this->assertEquals('bar', $_SERVER['__events.test']);
@@ -141,7 +141,7 @@ class TransactionalDispatcherTest extends TestCase
 
         $this->setupTransactionLevel(1);
         $this->dispatcher->setTransactionalEvents(['foo/*']);
-        $this->dispatcher->dispatch('foo/bar');
+        $this->dispatcher->dispatch('foo/bar', $this->modelMock);
 
         $this->assertTrue($this->hasCommitListeners());
         $this->assertArrayNotHasKey('__events.test', $_SERVER);
@@ -161,8 +161,8 @@ class TransactionalDispatcherTest extends TestCase
         $this->setupTransactionLevel(1);
         $this->dispatcher->setTransactionalEvents(['foo/*']);
         $this->dispatcher->setExcludedEvents(['foo/bar']);
-        $this->dispatcher->dispatch('foo/bar');
-        $this->dispatcher->dispatch('foo/zen');
+        $this->dispatcher->dispatch('foo/bar', $this->modelMock);
+        $this->dispatcher->dispatch('foo/zen', $this->modelMock);
 
         $this->assertTrue($this->hasCommitListeners());
         $this->assertEquals('bar', $_SERVER['__events.test.bar']);
@@ -172,13 +172,13 @@ class TransactionalDispatcherTest extends TestCase
     /** @test */
     public function it_enqueues_events_matching_a_namespace_patterns()
     {
-        $event = m::mock('\\Neves\\Event');
-        $this->dispatcher->listen('\\Neves\\Event', function () {
+        $event = m::mock('\\Neves\\TransactionalEvent');
+        $this->dispatcher->listen('\\Neves\\TransactionalEvent', function () {
             $_SERVER['__events.test'] = 'bar';
         });
 
         $this->setupTransactionLevel(1);
-        $this->dispatcher->dispatch($event);
+        $this->dispatcher->dispatch($event, $this->modelMock);
 
         $this->assertTrue($this->hasCommitListeners());
         $this->assertArrayNotHasKey('__events.test', $_SERVER);
@@ -194,7 +194,7 @@ class TransactionalDispatcherTest extends TestCase
 
         $this->setupTransactionLevel(1);
         $this->dispatcher->setTransactionalEvents(['App\*']);
-        $this->dispatcher->dispatch($event);
+        $this->dispatcher->dispatch($event, $this->modelMock);
         $this->dispatcher->commit($this->getConnection());
 
         $this->assertFalse($this->hasCommitListeners());
@@ -209,8 +209,8 @@ class TransactionalDispatcherTest extends TestCase
         });
 
         $this->setupTransactionLevel(1);
-        $this->dispatcher->dispatch('foo');
-        $this->dispatcher->dispatch(new \Illuminate\Database\Events\TransactionCommitted($this->getConnection()));
+        $this->dispatcher->dispatch('foo', $this->modelMock);
+        $this->dispatcher->dispatch(new \Illuminate\Database\Events\TransactionCommitted($this->getConnection()), $this->modelMock);
 
         $this->assertFalse($this->hasCommitListeners());
         $this->assertEquals('bar', $_SERVER['__events.test']);
@@ -224,8 +224,8 @@ class TransactionalDispatcherTest extends TestCase
         });
 
         $this->setupTransactionLevel(1);
-        $this->dispatcher->dispatch('foo');
-        $this->dispatcher->dispatch(new \Illuminate\Database\Events\TransactionRolledBack($this->getConnection()));
+        $this->dispatcher->dispatch('foo', $this->modelMock);
+        $this->dispatcher->dispatch(new \Illuminate\Database\Events\TransactionRolledBack($this->getConnection()), $this->modelMock);
 
         $this->assertFalse($this->hasCommitListeners());
         $this->assertArrayNotHasKey('__events.test', $_SERVER);
@@ -233,14 +233,13 @@ class TransactionalDispatcherTest extends TestCase
 
     private function hasCommitListeners()
     {
-        $connectionId = spl_object_hash($this->connectionResolverMock->connection());
-
+        $connectionId = spl_object_hash($this->modelMock->getConnection());
         return $this->dispatcher->hasListeners($connectionId.'_commit');
     }
 
     private function getConnection()
     {
-        return $this->connectionResolverMock->connection();
+        return $this->modelMock->getConnection();
     }
 
     private function setupTransactionLevel($level = 1)
@@ -252,9 +251,8 @@ class TransactionalDispatcherTest extends TestCase
             ->andReturn('dummy')
             ->mock();
 
-        $this->connectionResolverMock = $this->connectionResolverMock
-            ->shouldReceive('connection')
-            ->andReturn($connection)
-            ->mock();
+        $this->modelMock = $this->modelMock->shouldReceive('getConnection')
+        ->andReturn($connection)->mock();
+
     }
 }
