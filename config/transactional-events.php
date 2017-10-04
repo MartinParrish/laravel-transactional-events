@@ -17,10 +17,10 @@ return [
     'enable' => true,
 
     'events' => [
-        'App\Events',
+        'eloquent.'
     ],
 
-    'exclude' => [
+    'excluded' => [
         //
     ],
 ];

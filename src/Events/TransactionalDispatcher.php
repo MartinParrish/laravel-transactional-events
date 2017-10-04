@@ -1,10 +1,9 @@
 <?php
 
-namespace Neves\Events;
+namespace Neves\TransactionalEvents\Events;
 
 use Illuminate\Support\Str;
 use Illuminate\Database\ConnectionInterface;
-use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Events\Dispatcher as EventDispatcher;
 use Illuminate\Database\Events\TransactionRolledBack;
@@ -12,12 +11,6 @@ use Illuminate\Contracts\Events\Dispatcher as DispatcherContract;
 
 class TransactionalDispatcher implements DispatcherContract
 {
-    /**
-     * The connection resolver.
-     *
-     * @var \Illuminate\Database\ConnectionResolverInterface
-     */
-    private $connectionResolver;
 
     /**
      * The event dispatcher.
@@ -31,8 +24,8 @@ class TransactionalDispatcher implements DispatcherContract
      *
      * @var array
      */
-    private $transactional = [
-        'App\Events',
+    private $transactionalEvents = [
+        'eloquent.',
     ];
 
     /**
@@ -47,14 +40,25 @@ class TransactionalDispatcher implements DispatcherContract
     /**
      * Create a new transactional event dispatcher instance.
      *
-     * @param  \Illuminate\Database\ConnectionResolverInterface  $connectionResolver
      * @param  \Illuminate\Contracts\Events\Dispatcher  $eventDispatcher
      */
-    public function __construct(ConnectionResolverInterface $connectionResolver, EventDispatcher $eventDispatcher)
+    public function __construct(EventDispatcher $eventDispatcher)
     {
-        $this->connectionResolver = $connectionResolver;
         $this->dispatcher = $eventDispatcher;
         $this->setUpListeners();
+    }
+
+    /**
+     * Fire an event and call the listeners.
+     *
+     * @param  string|object  $event
+     * @param  mixed  $payload
+     * @param  bool  $halt
+     * @return array|null
+     */
+    public function fire($event, $payload = [], $halt = false)
+    {
+        return $this->dispatch($event, $payload, $halt);
     }
 
     /**
@@ -67,12 +71,19 @@ class TransactionalDispatcher implements DispatcherContract
      */
     public function dispatch($event, $payload = [], $halt = false)
     {
-        $connection = $this->connectionResolver->connection();
-        $connectionId = spl_object_hash($connection);
+        if (is_object($event) && $event instanceof \Neves\TransactionalEvents\Contracts\TransactionalEvent) {
+            $connection = $event->getConnection();
+        } elseif (is_object($payload) && $payload instanceof \Illuminate\Database\Eloquent\Model) {
+            $connection = $payload->getConnection();
+        } else {
+            return $this->dispatcher->dispatch($event, $payload, $halt);
+        }
 
         if (! $this->isTransactionalEvent($connection, $event)) {
             return $this->dispatcher->dispatch($event, $payload, $halt);
         }
+
+        $connectionId = spl_object_hash($connection);
 
         $this->dispatcher->listen($connectionId.'_commit', function () use ($event, $payload) {
             $this->dispatcher->dispatch($event, $payload);
@@ -96,12 +107,12 @@ class TransactionalDispatcher implements DispatcherContract
     /**
      * Set list of events that should be handled by transactional layer.
      *
-     * @param  array|null  $transactional
+     * @param  array|null  $events
      * @return void
      */
-    public function setTransactionalEvents(array $transactional)
+    public function setTransactionalEvents(array $events)
     {
-        $this->transactional = $transactional;
+        $this->transactionalEvents = $events;
     }
 
     /**
@@ -151,18 +162,23 @@ class TransactionalDispatcher implements DispatcherContract
      */
     private function shouldHandle($event)
     {
-        $event = is_string($event) ? $event : get_class($event);
+        $eventName = is_string($event) ? $event : get_class($event);
 
         foreach ($this->exclude as $excluded) {
-            if ($this->matches($excluded, $event)) {
+            if ($this->matches($excluded, $eventName)) {
                 return false;
             }
         }
 
-        foreach ($this->transactional as $transactionalEvent) {
-            if ($this->matches($transactionalEvent, $event)) {
+        foreach ($this->transactionalEvents as $transactionalEvent) {
+            if ($this->matches($transactionalEvent, $eventName)) {
                 return true;
             }
+        }
+
+
+        if (is_object($event) && $event instanceof \Neves\TransactionalEvents\Contracts\TransactionalEvent) {
+            return true;
         }
 
         return false;
@@ -179,6 +195,17 @@ class TransactionalDispatcher implements DispatcherContract
     {
         return (Str::contains($pattern, '*') && Str::is($pattern, $event))
             || Str::startsWith($event, $pattern);
+    }
+
+    private function setUpListeners()
+    {
+        $this->dispatcher->listen(TransactionCommitted::class, function ($event) {
+            $this->commit($event->connection);
+        });
+
+        $this->dispatcher->listen(TransactionRolledBack::class, function ($event) {
+            $this->rollback($event->connection);
+        });
     }
 
     /**
@@ -281,16 +308,5 @@ class TransactionalDispatcher implements DispatcherContract
     public function __call($method, $parameters)
     {
         return $this->dispatcher->$method(...$parameters);
-    }
-
-    private function setUpListeners()
-    {
-        $this->dispatcher->listen(TransactionCommitted::class, function ($event) {
-            $this->commit($event->connection);
-        });
-
-        $this->dispatcher->listen(TransactionRolledBack::class, function ($event) {
-            $this->rollback($event->connection);
-        });
     }
 }

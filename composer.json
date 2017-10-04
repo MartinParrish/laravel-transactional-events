@@ -19,14 +19,14 @@
         }
     ],
     "autoload": {
-        "psr-0": {
-            "Neves\\Events\\": "src/"
+        "psr-4": {
+            "Neves\\TransactionalEvents\\": "src/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "Neves\\Events\\EventServiceProvider"
+                "Neves\\TransactionalEvents\\EventServiceProvider"
             ]
         }
     }

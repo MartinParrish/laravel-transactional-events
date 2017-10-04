@@ -1,9 +1,11 @@
 <?php
 
-namespace Neves\Events;
+namespace Neves\TransactionalEvents\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
+use Neves\TransactionalEvents\Events\TransactionalDispatcher;
+use Illuminate\Database\Eloquent\Model;
 
 class EventServiceProvider extends ServiceProvider
 {
@@ -20,18 +22,20 @@ class EventServiceProvider extends ServiceProvider
 
         $this->app->extend('events', function () {
             $dispatcher = new TransactionalDispatcher(
-                $this->app->make('db'),
                 $this->app->make(EventDispatcher::class)
             );
 
-            if (is_array($transactional = config('transactional-events.transactional'))) {
-                $dispatcher->setTransactionalEvents($transactional);
+            if (is_array($events = config('transactional-events.events'))) {
+                $dispatcher->setTransactionalEvents($events);
             }
 
             $dispatcher->setExcludedEvents(config('transactional-events.excluded', []));
 
             return $dispatcher;
         });
+
+        Model::setEventDispatcher($this->app['events']);
+
     }
 
     /**
@@ -41,12 +45,6 @@ class EventServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        $this->publishes([
-            __DIR__.'/../../config/transactional-events.php' => config_path('transactional-events.php'),
-        ]);
-
-        $this->mergeConfigFrom(
-            __DIR__.'/../../config/transactional-events.php', 'transactional-events'
-        );
+        $this->app->configure('transactional-events');
     }
 }
