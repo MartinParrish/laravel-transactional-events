@@ -17,7 +17,11 @@ return [
     'enable' => true,
 
     'events' => [
-        'eloquent.'
+        'eloquent.created',
+        'eloquent.saved',
+        'eloquent.updated',
+        'eloquent.deleted',
+        'eloquent.restored'
     ],
 
     'excluded' => [
