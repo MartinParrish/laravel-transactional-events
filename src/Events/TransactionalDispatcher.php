@@ -38,6 +38,13 @@ class TransactionalDispatcher implements DispatcherContract
     ];
 
     /**
+     * The current pending events per transaction level of connections.
+     *
+     * @var array
+     */
+    private $pendingTransactionalEvents = [];
+
+    /**
      * Create a new transactional event dispatcher instance.
      *
      * @param  \Illuminate\Contracts\Events\Dispatcher  $eventDispatcher
@@ -85,9 +92,8 @@ class TransactionalDispatcher implements DispatcherContract
 
         $connectionId = spl_object_hash($connection);
 
-        $this->dispatcher->listen($connectionId.'_commit', function () use ($event, $payload) {
-            $this->dispatcher->dispatch($event, $payload);
-        });
+        $transactionLevel = $connection->transactionLevel();
+        $this->pendingTransactionalEvents[$connectionId][$transactionLevel][] = compact('event', 'payload');
     }
 
     /**
@@ -100,8 +106,20 @@ class TransactionalDispatcher implements DispatcherContract
     {
         $connectionId = spl_object_hash($connection);
 
-        $this->dispatcher->dispatch($connectionId.'_commit');
-        $this->dispatcher->forget($connectionId.'_commit');
+        // Prevent events to be raised when a nested transaction is
+        // committed, so no intermediate state is considered saved.
+        // Dispatch events only after outer transaction commits.
+        if ($connection->transactionLevel() > 0 || ! isset($this->pendingTransactionalEvents[$connectionId])) {
+            return;
+        }
+
+        foreach ($this->pendingTransactionalEvents[$connectionId] as $transactionalLevel => $events) {
+            foreach ($events as $event) {
+                $this->dispatcher->dispatch($event['event'], $event['payload']);
+            }
+        }
+
+        unset($this->pendingTransactionalEvents[$connectionId]);
     }
 
     /**
@@ -135,7 +153,14 @@ class TransactionalDispatcher implements DispatcherContract
     public function rollback(ConnectionInterface $connection)
     {
         $connectionId = spl_object_hash($connection);
-        $this->dispatcher->forget($connectionId.'_commit');
+
+        $transactionLevel = $connection->transactionLevel() + 1;
+
+        if ($transactionLevel > 1) {
+            unset($this->pendingTransactionalEvents[$connectionId][$transactionLevel]);
+        } else {
+            unset($this->pendingTransactionalEvents[$connectionId]);
+        }
     }
 
     /**
