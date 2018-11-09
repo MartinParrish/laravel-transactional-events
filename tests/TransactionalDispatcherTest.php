@@ -1,13 +1,20 @@
 <?php
 
+use Illuminate\Database\Connection;
+use Illuminate\Database\Eloquent\Model;
 use Orchestra\Testbench\TestCase;
 use Neves\Events\EventServiceProvider;
 use Neves\Events\TransactionalDispatcher;
 use Neves\Events\Contracts\TransactionalEvent;
+use Mockery\Mockery;
+
+
 
 class TransactionalDispatcherTest extends TestCase
 {
     protected $dispatcher;
+
+    protected $model;
 
     public function setUp()
     {
@@ -17,6 +24,9 @@ class TransactionalDispatcherTest extends TestCase
 
         $this->dispatcher = $this->app['events'];
         $this->dispatcher->setTransactionalEvents(['*']);
+
+        $this->model = \Mockery::mock(model::class);
+        $this->model->shouldReceive('getConnection')->andReturn(app('db')->connection());
     }
 
     /** @test */
@@ -54,7 +64,7 @@ class TransactionalDispatcherTest extends TestCase
         });
 
         DB::transaction(function () {
-            $this->dispatcher->dispatch('foo');
+            $this->dispatcher->dispatch('foo', $this->model);
             $this->assertArrayNotHasKey('__events', $_SERVER);
         });
 
@@ -109,12 +119,12 @@ class TransactionalDispatcherTest extends TestCase
 
         DB::transaction(function () {
             DB::transaction(function () {
-                $this->dispatcher->dispatch('foo');
+                $this->dispatcher->dispatch('foo', $this->model);
             });
 
             try {
                 DB::transaction(function () {
-                    $this->dispatcher->dispatch('foo');
+                    $this->dispatcher->dispatch('foo', $this->model);
                     throw new \Exception;
                 });
             } catch (\Exception $e) {
@@ -135,11 +145,11 @@ class TransactionalDispatcherTest extends TestCase
 
         DB::transaction(function () {
             DB::transaction(function () {
-                $this->dispatcher->dispatch('foo');
+                $this->dispatcher->dispatch('foo', $this->model);
             });
 
             DB::transaction(function () {
-                $this->dispatcher->dispatch('foo');
+                $this->dispatcher->dispatch('foo', $this->model);
                 DB::rollBack();
             });
         });
@@ -156,7 +166,7 @@ class TransactionalDispatcherTest extends TestCase
 
         DB::transaction(function () {
             DB::transaction(function () {
-                $this->dispatcher->dispatch('foo');
+                $this->dispatcher->dispatch('foo', $this->model);
             });
             $this->assertArrayNotHasKey('__events', $_SERVER);
         });
@@ -174,7 +184,7 @@ class TransactionalDispatcherTest extends TestCase
         try {
             DB::transaction(function () {
                 DB::transaction(function () {
-                    $this->dispatcher->dispatch('foo');
+                    $this->dispatcher->dispatch('foo', $this->model);
                     throw new \Exception;
                 });
             });
@@ -194,7 +204,7 @@ class TransactionalDispatcherTest extends TestCase
 
         DB::transaction(function () {
             DB::transaction(function () {
-                $this->dispatcher->dispatch('foo');
+                $this->dispatcher->dispatch('foo', $this->model);
                 DB::rollBack();
             });
         });
@@ -212,7 +222,7 @@ class TransactionalDispatcherTest extends TestCase
         try {
             DB::transaction(function () {
                 DB::transaction(function () {
-                    $this->dispatcher->dispatch('foo');
+                    $this->dispatcher->dispatch('foo', $this->model);
                 });
                 throw new \Exception;
             });
@@ -232,7 +242,7 @@ class TransactionalDispatcherTest extends TestCase
 
         DB::transaction(function () {
             DB::transaction(function () {
-                $this->dispatcher->dispatch('foo');
+                $this->dispatcher->dispatch('foo', $this->model);
             });
             DB::rollback();
         });
@@ -291,7 +301,7 @@ class TransactionalDispatcherTest extends TestCase
         });
 
         DB::transaction(function () {
-            $this->dispatcher->dispatch('foo/bar');
+            $this->dispatcher->dispatch('foo/bar', $this->model);
             $this->assertArrayNotHasKey('__events', $_SERVER);
         });
 
@@ -364,5 +374,7 @@ class TransactionalDispatcherTest extends TestCase
 
 class CustomEvent implements TransactionalEvent
 {
-    //
+    public function getConnection(): Connection {
+        return app('db')->connection();
+    }
 }

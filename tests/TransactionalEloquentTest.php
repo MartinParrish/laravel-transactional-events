@@ -2,10 +2,13 @@
 
 use Orchestra\Testbench\TestCase;
 use Neves\Events\EventServiceProvider;
+use Illuminate\Database\Eloquent\Model;
 
 class TransactionalEloquentTest extends TestCase
 {
     protected $dispatcher;
+
+    protected $model;
 
     public function setUp()
     {
@@ -15,6 +18,9 @@ class TransactionalEloquentTest extends TestCase
 
         $this->dispatcher = $this->app['events'];
         $this->dispatcher->setTransactionalEvents(['*']);
+
+        $this->model = \Mockery::mock(model::class);
+        $this->model->shouldReceive('getConnection')->andReturn(app('db')->connection());
     }
 
     /** @test */
@@ -48,7 +54,7 @@ class TransactionalEloquentTest extends TestCase
         });
 
         DB::transaction(function () {
-            $this->dispatcher->dispatch('eloquent.saved');
+            $this->dispatcher->dispatch('eloquent.saved', $this->model);
             $this->assertArrayNotHasKey('__events', $_SERVER);
         });
 
