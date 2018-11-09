@@ -66,7 +66,7 @@ class TransactionalDispatcher implements DispatcherContract
      * @param  \Illuminate\Database\ConnectionResolverInterface  $connectionResolver
      * @param  \Illuminate\Contracts\Events\Dispatcher  $eventDispatcher
      */
-    public function __construct(ConnectionResolverInterface $connectionResolver, EventDispatcher $eventDispatcher)
+    public function __construct(ConnectionResolverInterface $connectionResolver, DispatcherContract $eventDispatcher)
     {
         $this->connectionResolver = $connectionResolver;
         $this->dispatcher = $eventDispatcher;
