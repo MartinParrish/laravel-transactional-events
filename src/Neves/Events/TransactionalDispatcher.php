@@ -5,7 +5,7 @@ namespace Neves\Events;
 use Illuminate\Support\Str;
 use Illuminate\Database\ConnectionInterface;
 use Neves\Events\Contracts\TransactionalEvent;
-use Illuminate\Database\ConnectionResolverInterface;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Events\Dispatcher as EventDispatcher;
@@ -14,12 +14,6 @@ use Illuminate\Contracts\Events\Dispatcher as DispatcherContract;
 
 class TransactionalDispatcher implements DispatcherContract
 {
-    /**
-     * The connection resolver.
-     *
-     * @var \Illuminate\Database\ConnectionResolverInterface
-     */
-    private $connectionResolver;
 
     /**
      * The event dispatcher.
@@ -63,12 +57,10 @@ class TransactionalDispatcher implements DispatcherContract
     /**
      * Create a new transactional event dispatcher instance.
      *
-     * @param  \Illuminate\Database\ConnectionResolverInterface  $connectionResolver
      * @param  \Illuminate\Contracts\Events\Dispatcher  $eventDispatcher
      */
-    public function __construct(ConnectionResolverInterface $connectionResolver, DispatcherContract $eventDispatcher)
+    public function __construct(DispatcherContract $eventDispatcher)
     {
-        $this->connectionResolver = $connectionResolver;
         $this->dispatcher = $eventDispatcher;
         $this->setUpListeners();
     }
@@ -83,7 +75,14 @@ class TransactionalDispatcher implements DispatcherContract
      */
     public function dispatch($event, $payload = [], $halt = false)
     {
-        $connection = $this->connectionResolver->connection();
+
+        if (is_object($event) && $event instanceof TransactionalEvent) {
+            $connection = $event->getConnection();
+        } elseif (is_object($payload) && $payload instanceof Model) {
+            $connection = $payload->getConnection();
+        } else {
+            return $this->dispatcher->dispatch($event, $payload, $halt);
+        }
 
         // If halt is specified, then automatically dispatches the event
         // to the original dispatcher. This happens because the caller
