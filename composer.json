@@ -34,5 +34,6 @@
     },
     "require-dev": {
         "orchestra/testbench": "3.5.* || 3.6.* || 3.7.*"
-    }
+    },
+    "abandoned": "visualsoft/laravel-transactional-events"
 }
